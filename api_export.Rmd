@@ -1,0 +1,90 @@
+# Import Libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(httr)
+library(readr)
+```
+
+# Only needs to be run the first time per session
+```{r}
+# Input cookie value or set to NULL if you don't have one 
+cookie <- NULL
+```
+
+# Credential Set Up
+```{r}
+# Input username
+user <- " "
+# Input password
+pass <- " "
+```
+
+
+# Authentication and Export Functions
+```{r}
+get_cookie <- function(user, pass){
+  # Input:
+  # user: username from the config.ini file
+  # pass: password form the config.ini file
+  #
+  # Output: returns the .SharedCookie value needed to export query results
+  
+  # Run the authentication POST query to get the .SharedCookie value
+  response <- POST("https://survey.asee.org/api/token", body=list(username=user, password=pass), encode = 'form')
+
+  # Save the cookie value
+  cookie <- paste0('.SharedCookie=', cookies(response)$value[1])
+  return(cookie)
+}
+
+run_export <- function(model_id, query_id, output, cookie){
+  # Input:
+  # model_id: id of the model being used to run the query
+  # query_id: id of the desired query being run
+  # cookie: .SharedCookie value from the get_cookie function
+  # output: output file location
+  #
+  # Output: saves a .csv file containing the contents of the query results
+  
+  # Run the POST query using the supplied model_id, query_id, and cookie values
+  response <- POST(paste0("https://newedms.asee.org/api/reports/models/", model_id, "/queries/", query_id, "/export/csv"), add_headers(Cookie = cookie), encode = 'form')
+  
+  return(response)
+}
+
+save_csv <- function(response, output){
+  
+  # Format the data in a tibble
+  data <- read_csv(content(response, as="text"))
+  # Save the tibble as a CSV
+  write_csv(data, output)
+  print(paste("Export complete. Results can be found in ", output))
+}
+```
+
+# Variable Set Up
+```{r}
+# Input the output file location
+# i.e. /Users/{user}/ASEE_API/output/R_response.csv
+output <- " "
+# Input model id
+model_id <- " "
+# Input query id
+query_id <- " "
+```
+
+# Run Authentication/Export
+```{r}
+# Try running export with old cookie value
+print(paste("Exporting results for model_id:", model_id, "and query_id:", query_id))
+response <- run_export(model_id, query_id, output, cookie)
+if (response$status_code == 403){
+  print("Old cookie expired retrieving new one")
+  cookie <- get_cookie(user, pass)
+  response <- run_export(model_id, query_id, output, cookie)
+}else if (response$status_code != 200){
+  stop("Error in query please check that your model_id and query_id are correct.")
+}
+save_csv(response, output)
+
+```
